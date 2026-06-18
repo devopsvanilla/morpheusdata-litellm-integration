@@ -1,0 +1,85 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama3.2:3b}
+    networks:
+      - llm_net
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        ollama serve &
+
+        max_retries=60
+        retry_interval=2
+        attempt=1
+
+        until ollama list >/dev/null 2>&1; do
+          if [ $$attempt -ge $$max_retries ]; then
+            echo "Ollama did not become ready after $$max_retries attempts."
+            exit 1
+          fi
+          echo "Waiting for Ollama... attempt $$attempt/$$max_retries"
+          attempt=$$((attempt + 1))
+          sleep $$retry_interval
+        done
+
+        if ! ollama list | grep -q "${OLLAMA_MODEL_NAME}"; then
+          ollama pull "${OLLAMA_MODEL_NAME}"
+        fi
+
+        wait
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  litellm:
+    image: docker.litellm.ai/berriai/litellm:main-latest
+    container_name: litellm
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-local-morpheus-001}
+      - LITELLM_MODEL_ALIAS=${LITELLM_MODEL_ALIAS:-local-llama}
+      - LITELLM_MODEL_REF=${LITELLM_MODEL_REF:-ollama/llama3.2:3b}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+    networks:
+      - llm_net
+    volumes:
+      - ./litellm_config.yaml.template:/app/config.yaml.template:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        cat /app/config.yaml.template | \
+          sed "s|\$${LITELLM_MODEL_ALIAS}|$${LITELLM_MODEL_ALIAS}|g" | \
+          sed "s|\$${LITELLM_MODEL_REF}|$${LITELLM_MODEL_REF}|g" | \
+          sed "s|\$${OLLAMA_URL}|$${OLLAMA_URL}|g" > /app/config.yaml
+        exec litellm --config /app/config.yaml --port 4000
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4000/health/liveliness"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+networks:
+  llm_net:
+    driver: bridge
+
+volumes:
+  ollama_data:

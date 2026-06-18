@@ -1,0 +1,5 @@
+model_list:
+- model_name: ${LITELLM_MODEL_ALIAS}
+  litellm_params:
+    model: ${LITELLM_MODEL_REF}
+    api_base: ${OLLAMA_URL}
