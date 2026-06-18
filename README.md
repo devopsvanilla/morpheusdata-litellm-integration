@@ -6,6 +6,44 @@ Este projeto habilita o uso local de uma solução de IA agêntica para o **Morp
 
 O **LiteLLM** atua como **gateway OpenAI-compatible** que expõe uma API `v1` compatível com a especificação **OpenAI Chat Completions API**, permitindo que o Morpheus Data consuma o backend local da mesma forma que consumiria um serviço de IA comercial.
 
+```mermaid
+flowchart TB
+    subgraph Morpheus ["Morpheus Data Enterprise 9.0.0"]
+        direction TB
+        MCP["CMP (Cloud Management Platform)\n- Provisonamento multi-cloud\n- Automação DevOps / IaC\n- Orquestração de aplicações\n- FinOps e governança"]
+        MAIA["IA Agêntica (Agentic AI)\n- Integração nativa com LLM\n- Espera endpoint OpenAI-compatible\n- Preenche: endpoint + API Key"]
+        MCP --> MAIA
+    end
+
+    subgraph LiteLLM_Sub ["LiteLLM Proxy (AI Gateway)"]
+        direction TB
+        L_PROXY["Roteador de LLM\n(API OpenAI-compatible)\n- Traduz chamadas OpenAI\n- Expone /v1/chat/completions\n- Expone /v1/models"]
+        L_GATEWAY["Gateway de IA\n(Roteamento, retries, fallbacks)\n- Auth com master key\n- Mapeia: local-llama → ollama/llama3.2:3b"]
+        L_PROXY --> L_GATEWAY
+    end
+
+    subgraph Ollama_Sub ["Ollama (LLM Local)"]
+        direction TB
+        O_API["API do Ollama\n(nativa, não OpenAI)\n- /api/tags\n- /api/chat\n- /api/generate"]
+        O_SRV["Servidor de Inferência\n(LLM local)\n- Executa o modelo\n- Gerencia GPU/CPU\n- Downloads de modelos"]
+        O_API --> O_SRV
+    end
+
+    subgraph Modelo ["Modelo LLM"]
+        direction TB
+        LLAMA["Llama 3.2:3b\n(Meta)\n- Modelo de linguagem\n- Inferência local\n- Pequeno footprint\n- Adequado para teste"]
+    end
+
+    Morpheus -->|"HTTP /v1/chat/completions\nOpenAI-compatible\nAuthorization: Bearer sk-local-morpheus-001\nmodel: local-llama"| L_PROXY
+    L_GATEWAY -->|"Roteia para Ollama\n(ollama/llama3.2:3b)\napi_base: http://ollama:11434"| O_API
+    O_SRV -->|Gera resposta textual| LLAMA
+
+    style Morpheus fill:#e3f2fd,stroke:#1976d2
+    style LiteLLM_Sub fill:#fff3e0,stroke:#f57c00
+    style Ollama_Sub fill:#e8f5e9,stroke:#388e3c
+    style Modelo fill:#fce4ec,stroke:#c2185b
+```
+
 ### O que ele entrega
 
 - Um endpoint OpenAI-compatible local (`http://localhost:4000/v1`).
